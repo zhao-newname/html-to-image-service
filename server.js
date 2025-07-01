@@ -2,12 +2,11 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 
 const app = express();
-// 使用 express.json() 中间件来解析JSON格式的请求体
-app.use(express.json({ limit: '10mb' })); // 限制请求体大小为10MB
+app.use(express.json({ limit: '10mb' }));
 
-// 创建一个POST路由，用于接收HTML并生成图片
 app.post('/generate', async (req, res) => {
-  const { html, width, height } = req.body;
+  // 从请求体中解构出 html, css, width, 和 height
+  const { html, css, width, height } = req.body;
 
   if (!html) {
     return res.status(400).send({ error: 'HTML content is required in the request body.' });
@@ -15,28 +14,39 @@ app.post('/generate', async (req, res) => {
 
   let browser;
   try {
-    // 启动一个无头浏览器实例
-    // '--no-sandbox' 和 '--disable-setuid-sandbox' 参数在很多云平台是必需的
-    browser = await puppeteer.launch({ 
+    browser = await puppeteer.launch({
       headless: "new",
-      args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
     const page = await browser.newPage();
-
-    // 设置视口（图片尺寸）
-    await page.setViewport({ 
-      width: width || 1280,  // 如果请求中没提供宽度，默认为1280px
-      height: height || 720  // 如果请求中没提供高度，默认为720px
+    await page.setViewport({
+      width: width || 1280,
+      height: height || 720
     });
 
-    // 设置页面内容
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    // 将传入的HTML和CSS组合成一个完整的HTML文档
+    // 即使不提供css字段，`css || ''`也能确保代码正常运行
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            ${css || ''}
+          </style>
+        </head>
+        <body>
+          ${html}
+        </body>
+      </html>
+    `;
 
-    // 截取整个页面的屏幕快照，并获取其二进制数据
+    // 设置页面的内容为我们组合好的完整HTML
+    await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
+
     const imageBuffer = await page.screenshot({ type: 'png' });
 
-    // 将图片数据发送回客户端
     res.set('Content-Type', 'image/png');
     res.send(imageBuffer);
 
@@ -44,7 +54,6 @@ app.post('/generate', async (req, res) => {
     console.error('Error generating image:', error);
     res.status(500).send({ error: 'Failed to generate image.' });
   } finally {
-    // 确保浏览器实例总是被关闭
     if (browser) {
       await browser.close();
     }
