@@ -1,11 +1,11 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
 app.post('/generate', async (req, res) => {
-  // 从请求体中解构出 html, css, width, 和 height
   const { html, css, width, height } = req.body;
 
   if (!html) {
@@ -14,9 +14,13 @@ app.post('/generate', async (req, res) => {
 
   let browser;
   try {
+    // 关键改动：使用 @sparticuz/chromium 的配置来启动 puppeteer
     browser = await puppeteer.launch({
-      headless: "new",
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
+      ignoreHTTPSErrors: true,
     });
 
     const page = await browser.newPage();
@@ -25,8 +29,6 @@ app.post('/generate', async (req, res) => {
       height: height || 720
     });
 
-    // 将传入的HTML和CSS组合成一个完整的HTML文档
-    // 即使不提供css字段，`css || ''`也能确保代码正常运行
     const fullHtml = `
       <!DOCTYPE html>
       <html>
@@ -42,7 +44,6 @@ app.post('/generate', async (req, res) => {
       </html>
     `;
 
-    // 设置页面的内容为我们组合好的完整HTML
     await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
 
     const imageBuffer = await page.screenshot({ type: 'png' });
