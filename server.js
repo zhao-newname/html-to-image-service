@@ -34,27 +34,42 @@ app.post('/generate', async (req, res) => {
     });
 
     const page = await browser.newPage();
-    await page.setViewport({ width: width || 1280, height: height || 720 });
+    // 修改点 1: 将默认视口尺寸更新为您设计稿的尺寸，以便在未提供宽高时获得最佳效果
+    await page.setViewport({ width: width || 1240, height: height || 1660 });
 
-    const fullHtml = `
-      <!DOCTYPE html><html><head><meta charset="UTF-8"><style>${css || ''}</style></head>
-      <body>${html}</body></html>
-    `;
-    await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
+    // ========================================================================
+    // --- 核心修改部分：用更智能的方式处理HTML和CSS ---
+    // ========================================================================
+    //
+    // 旧逻辑（已删除）:
+    // const fullHtml = `
+    //   <!DOCTYPE html><html><head><meta charset="UTF-8"><style>${css || ''}</style></head>
+    //   <body>${html}</body></html>
+    // `;
+    //
+    // 新逻辑:
+    // 1. 将您从 Make.com 传入的 CSS 代码包裹在一个 <style> 标签里。
+    const styleTag = `<style>${css || ''}</style>`;
+
+    // 2. 将这个 <style> 标签“注入”到您传入的完整 HTML 的 </head> 标签之前。
+    //    这种方法可以完美保留您原始 HTML 的所有结构，包括 <meta> 和 <link> 标签，
+    //    从而确保字体能够被正确加载。
+    const finalHtml = html.includes('</head>')
+      ? html.replace('</head>', `${styleTag}</head>`)
+      : html;
+    // ========================================================================
+    // --- 核心修改结束 ---
+    // ========================================================================
+
+    // 使用我们智能处理过的、包含所有字体链接和样式的最终HTML来设置页面内容
+    await page.setContent(finalHtml, { waitUntil: 'networkidle0' });
+
     const imageBuffer = await page.screenshot({ type: 'png' });
 
-    // --- 核心改动在这里 ---
-    // 1. 决定最终文件名：
-    //    - 如果传入了 customFilename，就使用它（并进行安全处理）。
-    //    - 否则，像以前一样生成一个唯一的UUID文件名。
-    //    - 使用 path.basename() 可以防止路径遍历攻击，确保只使用文件名部分。
+    // 这部分逻辑保持不变
     const finalFilename = customFilename ? path.basename(customFilename) : `${uuidv4()}.png`;
     const filepath = path.join(tempDir, finalFilename);
-
-    // 2. 将图片数据写入到使用最终文件名的文件中
     fs.writeFileSync(filepath, imageBuffer);
-
-    // 3. 在返回的JSON中包含这个最终文件名
     res.json({ filename: finalFilename });
 
   } catch (error) {
